@@ -32,7 +32,7 @@ These are the core scripts that implement the medallion architecture. Run them i
 **`pipeline/04_publish_orders.py`**
 - Joins order details with headers
 - Calculates lead time in business days (Mon-Fri only)
-- Calculates extended price (qty * (price - discount))
+- Calculates extended price: `qty * price * (1 - discount_rate)`
 - Renames Freight -> TotalOrderFreight
 - Writes to `out/publish(gold)/publish_orders/`
 

@@ -68,10 +68,11 @@ This creates `fact_sales`, `dim_product`, and `dim_customer` under `out/publish(
 ---
 
 ## Key Results
+
 | Metric | Finding |
 | --- | --- |
-| **Top revenue color by year** | 2021 **Red** (~$6.02M), 2022 **Black** (~$14.01M), 2023 **Black** (~$15.05M), 2024 **Yellow** (~$6.37M) |
-| **Average lead time (business days)** | Accessories 5.01, Bikes 5.00, Clothing 5.01, Components 5.00 |
+| **Top revenue color by year** | 2021: **Red** ($6.02M) · 2022: **Black** ($13.92M) · 2023: **Black** ($15.03M) · 2024: **Yellow** ($6.36M) |
+| **Average lead time (business days)** | Accessories: 5.01 · Bikes: 5.00 · Clothing: 5.01 · Components: 5.01 |
 
 > **Notebooks**
 > - `06_visual_analysis.ipynb` - Main visuals for the two required questions
@@ -104,7 +105,7 @@ All publish fields required by the brief are present and non-null. The smoke tes
 
 ## Repository Map
 ```
-upstart/
+upstart13_pipeline/
 |- data/                      # Input CSVs
 |- notebooks/                 # Visual analysis notebooks
 |- scripts/
@@ -124,7 +125,7 @@ A few things I ran into while building this pipeline:
 
 - **Incomplete date handling**: The original CSV had some `OrderDate` entries with just `YYYY-MM`. I ended up backfilling these as `ShipDate - 7 days` which keeps the lead time calculation consistent (~5 business days across the board).
 
-- **Product duplicates**: Found duplicate `ProductID` entries in the raw file with different category labels. The silver layer now keeps only the row with a populated category, which dropped the product count from 504 to 295 distinct items.
+- **Product duplicates**: Found duplicate `ProductID` entries in the raw file with different category labels. The silver layer now keeps only the row with a populated category, which dropped the product count from 303 to 295 distinct items.
 
 - **Performance trade-offs**: I built a star schema (fact_sales + dimensions) to demo dimensional modeling, but calculating business days on-the-fly in Spark using `sequence()` was too slow for 121k rows. Ended up pre-calculating lead time in the publish layer instead.
 
