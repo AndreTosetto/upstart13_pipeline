@@ -12,12 +12,16 @@ Checks performed:
 """
 
 from __future__ import annotations
+import sys
 from pathlib import Path
 import csv
 import logging
 
 import pandas as pd
 import numpy as np
+
+# Add parent directory to path to import common module
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from common import get_paths, setup_logging
 

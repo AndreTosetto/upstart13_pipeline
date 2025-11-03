@@ -4,10 +4,16 @@ Checks that:
 - Bronze layer preserves original data (including "2021-06")
 - Silver layer has corrected data (OrderDate fixed to proper dates)
 """
+from __future__ import annotations
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import common module
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from common import get_paths, build_spark, setup_logging
-
 
 def main(script_file: str | None = __file__) -> None:
     log = setup_logging("upstart.verify_medallion")
