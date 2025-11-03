@@ -80,7 +80,6 @@ The `dw_pipeline/` folder has an experimental star schema implementation:
 - `03_build_dim_product.py` - Product dimension with profit margins
 - `04_build_dim_customer.py` - Customer dimension with RFM segmentation
 - `05_build_fact_sales.py` - Sales fact table
-- `06_validate_star_schema.py` - Validation
 
 This was exploratory work to show what a dimensional model could look like. It's not part of the main deliverable.
 
