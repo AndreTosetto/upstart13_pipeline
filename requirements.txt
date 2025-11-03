@@ -1,0 +1,14 @@
+# Upstart13 Data Pipeline - Python Dependencies
+
+# Core Data Processing
+pyspark==3.5.0          # Distributed data processing
+pandas==2.2.0           # Data manipulation (for notebooks)
+numpy>=1.24.0           # Numerical computing
+
+# Visualization
+matplotlib>=3.7.0       # Plotting and charts
+jupyter>=1.0.0          # Notebook support (optional, for 06_visual_analysis.ipynb)
+
+# Note: Java 11+ is required for PySpark
+# Installation:
+#   pip install -r requirements.txt
