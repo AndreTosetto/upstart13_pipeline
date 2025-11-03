@@ -30,7 +30,7 @@ If you're on an older version, download the latest from [python.org](https://www
 ### 1. Clone and Navigate
 ```bash
 git clone <repository-url>
-cd upstart
+cd upstart13_pipeline
 ```
 
 ### 2. Install Dependencies
@@ -84,7 +84,7 @@ This checks that all the data quality fixes were applied correctly.
 jupyter notebook notebooks/06_visual_analysis.ipynb
 ```
 
-Opens a notebook with bar charts for the three analysis questions (top color by year, lead time, return rate).
+Opens a notebook with visualizations for the two required analysis questions (top revenue color by year, average lead time by category).
 
 ---
 
