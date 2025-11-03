@@ -403,6 +403,8 @@ def main(script_file: str | None = __file__) -> None:
 
     spark.stop()
 
+    # Exit with proper code
+    sys.exit(0 if all_ok else 1)
 
 if __name__ == "__main__":
     main()
