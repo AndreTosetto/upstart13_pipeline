@@ -255,7 +255,7 @@ def main(script_file: str | None = __file__) -> None:
     soh.write.mode("overwrite").parquet(str(paths["store"] / "store_sales_order_header"))
 
     # Log keys (to reference in README / presentation)
-    log.info("PK/FK — suggested:")
+    log.info("PK/FK - suggested:")
     log.info("products: PK(ProductID)")
     log.info("sales_order_header: PK(SalesOrderID)")
     log.info("sales_order_detail: PK(SalesOrderID, SalesOrderDetailID), "
