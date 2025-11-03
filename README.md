@@ -48,9 +48,9 @@ python scripts/tests/smoke_publish.py
 ```
 
 Outputs are written to:
-- `out/raw` (bronze) - raw CSVs preserved as Parquet
-- `out/store` (silver) - cleaned, typed data (`store_products`, `store_sales_order_detail`, `store_sales_order_header`)
-- `out/publish` (gold) - publish tables and analysis outputs (`publish_product`, `publish_orders`, `analysis_*`)
+- `out/raw(bronze)` - raw CSVs preserved as Parquet
+- `out/store(silver)` - cleaned, typed data (`store_products`, `store_sales_order_detail`, `store_sales_order_header`)
+- `out/publish(gold)` - publish tables and analysis outputs (`publish_product`, `publish_orders`, `analysis_*`)
 
 ### Optional: Star Schema (DW)
 
@@ -63,7 +63,7 @@ python scripts/dw_pipeline/04_build_dim_customer.py
 python scripts/dw_pipeline/05_build_fact_sales.py
 ```
 
-This creates `fact_sales`, `dim_product`, and `dim_customer` under `out/publish/`. The star schema is optional - the main pipeline (scripts 01-05) already produces all required deliverables.
+This creates `fact_sales`, `dim_product`, and `dim_customer` under `out/publish(gold)/`. The star schema is optional...
 
 ---
 
