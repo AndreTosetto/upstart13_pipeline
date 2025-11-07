@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pyspark.sql import functions as F, types as T  # noqa: E402
 from common import get_paths, build_spark, setup_logging  # noqa: E402
+from config import PRICE_MODE  # noqa: E402
 
 
 def business_days_between() -> F.Column:
@@ -95,8 +96,10 @@ def main(script_file: str | None = __file__) -> None:
         ).otherwise(F.lit(0.0))
     )
 
-    # Official deliverable uses spec literal interpretation
-    joined = joined.withColumn("TotalLineExtendedPrice", F.col("TotalLineExtendedPrice_Spec"))
+    # Official deliverable uses configured price mode
+    price_column = "TotalLineExtendedPrice_Spec" if PRICE_MODE == "spec" else "TotalLineExtendedPrice_Correct"
+    joined = joined.withColumn("TotalLineExtendedPrice", F.col(price_column))
+    log.info(f"Using price formula: {PRICE_MODE} ({price_column})")
 
     # Rename Freight to TotalOrderFreight as required by spec
     if "Freight" in joined.columns:

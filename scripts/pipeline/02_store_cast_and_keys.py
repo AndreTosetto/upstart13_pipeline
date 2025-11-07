@@ -22,6 +22,7 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 from common import get_paths, build_spark, setup_logging
+from config import IMPUTE_ORDERDATE
 
 
 def trim(df: DataFrame, cols: Iterable[str]) -> DataFrame:
@@ -54,18 +55,25 @@ def main(script_file: str | None = __file__) -> None:
     sod = trim(sod, ["CarrierTrackingNumber"])
     soh = trim(soh, ["PurchaseOrderNumber", "AccountNumber"])
 
-    # Fix incomplete OrderDate (YYYY-MM format)
+    # Fix incomplete OrderDate (YYYY-MM format) - only if imputation enabled
     incomplete_count = soh.filter(F.length(F.col("OrderDate")) == 7).count()
     if incomplete_count > 0:
-        log.info(f"Fixing {incomplete_count} incomplete OrderDate values (YYYY-MM -> ShipDate - 7 days)")
-        soh = soh.withColumn("_ShipDate_parsed", F.to_date(F.col("ShipDate")))
-        soh = soh.withColumn(
-            "OrderDate",
-            F.when(
-                F.length(F.col("OrderDate")) == 7,
-                F.date_format(F.date_sub(F.col("_ShipDate_parsed"), 7), "yyyy-MM-dd")
-            ).otherwise(F.col("OrderDate"))
-        ).drop("_ShipDate_parsed")
+        if IMPUTE_ORDERDATE:
+            log.info(f"Fixing {incomplete_count} incomplete OrderDate values (YYYY-MM -> ShipDate - 7 days)")
+            soh = soh.withColumn("_ShipDate_parsed", F.to_date(F.col("ShipDate")))
+            soh = soh.withColumn(
+                "OrderDate",
+                F.when(
+                    F.length(F.col("OrderDate")) == 7,
+                    F.date_format(F.date_sub(F.col("_ShipDate_parsed"), 7), "yyyy-MM-dd")
+                ).otherwise(F.col("OrderDate"))
+            ).drop("_ShipDate_parsed")
+        else:
+            log.info(f"Found {incomplete_count} incomplete OrderDate values (imputation disabled, setting to NULL)")
+            soh = soh.withColumn(
+                "OrderDate",
+                F.when(F.length(F.col("OrderDate")) == 7, F.lit(None)).otherwise(F.col("OrderDate"))
+            )
 
     # Remove duplicate ProductIDs (keep row with category populated)
     window = Window.partitionBy("ProductID").orderBy(

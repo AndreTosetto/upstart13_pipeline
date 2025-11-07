@@ -2,9 +2,16 @@
 Executes the main pipeline (bronze -> silver -> gold).
 
 Runs scripts 01-05 in sequence to generate publish tables and required analyses.
+
+CLI Flags:
+  --price-mode {spec,correct}  Formula for TotalLineExtendedPrice (default: spec)
+  --impute-orderdate           Backfill incomplete OrderDate values (default: False)
+  --help                       Show this help message
 """
 import subprocess
 import sys
+import argparse
+import os
 from pathlib import Path
 from datetime import datetime
 
@@ -77,13 +84,15 @@ def run_script(script_path: Path, project_root: Path) -> tuple[bool, float]:
     print(f"{'='*70}")
 
     try:
-        # Run script as subprocess
+        # Run script as subprocess with config environment variables
+        env = os.environ.copy()
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=str(project_root),
             capture_output=False,  # Show output in real-time
             text=True,
-            timeout=600  # 10 minute timeout per script
+            timeout=600,  # 10 minute timeout per script
+            env=env
         )
 
         duration = (datetime.now() - start_time).total_seconds()
@@ -107,6 +116,41 @@ def run_script(script_path: Path, project_root: Path) -> tuple[bool, float]:
 
 def main():
     """Execute the complete pipeline."""
+    parser = argparse.ArgumentParser(
+        description="Upstart13 Data Engineering Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python run_pipeline.py                          # Run with defaults (spec formula, no imputation)
+  python run_pipeline.py --impute-orderdate       # Enable OrderDate backfilling
+  python run_pipeline.py --price-mode correct     # Use standard business logic formula
+
+Notes:
+  - Price mode: 'spec' uses literal spec formula, 'correct' uses standard ERP logic
+  - Imputation: Backfills 5 incomplete OrderDate values (+0.004% rows)
+  - Both formulas are always preserved in publish_orders for comparison
+        """
+    )
+
+    parser.add_argument(
+        '--price-mode',
+        choices=['spec', 'correct'],
+        default='spec',
+        help="Formula for TotalLineExtendedPrice (default: spec literal)"
+    )
+
+    parser.add_argument(
+        '--impute-orderdate',
+        action='store_true',
+        help="Backfill incomplete OrderDate as ShipDate - 7 days (default: False)"
+    )
+
+    args = parser.parse_args()
+
+    # Set environment variables for child processes
+    os.environ['UPSTART_PRICE_MODE'] = args.price_mode
+    os.environ['UPSTART_IMPUTE_ORDERDATE'] = 'true' if args.impute_orderdate else 'false'
+
     project_root = Path(__file__).resolve().parent
 
     print("\n" + "="*70)
@@ -114,6 +158,7 @@ def main():
     print("="*70)
     print(f"Project root: {project_root}")
     print(f"Total scripts: {len(PIPELINE_SCRIPTS)}")
+    print(f"Config: price-mode={args.price_mode}, impute-orderdate={args.impute_orderdate}")
     print(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # Track results

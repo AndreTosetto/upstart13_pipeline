@@ -8,8 +8,8 @@ PySpark pipeline implementing product master and sales order transformations wit
 
 | Decision | Implementation | Rationale | How to Change |
 |----------|----------------|-----------|---------------|
-| **Price Formula** | Uses spec literal: `OrderQty * (UnitPrice - UnitPriceDiscount)` | Follows requirement word-for-word; both formulas preserved for comparison (diff: -0.48%) | Switch to `TotalLineExtendedPrice_Correct` column in [04_publish_orders.py:87](scripts/pipeline/04_publish_orders.py#L87) |
-| **OrderDate Imputation** | Backfills 5 incomplete dates as `ShipDate - 7 days` | Enables lead time calculation (+0.004% rows); preserves ~5 business day pattern | Set to NULL to exclude from calculation in [02_store_cast_and_keys.py:57](scripts/pipeline/02_store_cast_and_keys.py#L57) |
+| **Price Formula** | Uses spec literal (default): `OrderQty * (UnitPrice - UnitPriceDiscount)` | Follows requirement word-for-word; both formulas preserved for comparison (diff: -0.48%) | Use `--price-mode correct` flag or set `PRICE_MODE='correct'` in [config.py](scripts/config.py) |
+| **OrderDate Imputation** | **OFF by default** - sets 5 incomplete dates to NULL | Avoids "inventing data"; preserves 99.996% of rows for lead time calc | Use `--impute-orderdate` flag to enable backfilling (+5 rows, +0.004%) |
 | **Business Days Logic** | Counts weekdays from OrderDate up to (not including) ShipDate | Standard definition: excludes weekends, excludes ship day itself | Modify `business_days_between()` in [04_publish_orders.py:18](scripts/pipeline/04_publish_orders.py#L18) |
 | **Freight Rename** | `Freight` → `TotalOrderFreight` | Per spec requirement: "rename to TotalOrderFreight" | Column rename in [04_publish_orders.py:90](scripts/pipeline/04_publish_orders.py#L90) |
 
@@ -25,12 +25,32 @@ PySpark pipeline implementing product master and sales order transformations wit
 # Install dependencies
 pip install -r requirements.txt
 
-# Run complete pipeline
+# Run complete pipeline (defaults: spec formula, no imputation)
 python run_pipeline.py
+
+# Run with options
+python run_pipeline.py --help                    # Show all CLI options
+python run_pipeline.py --impute-orderdate        # Enable OrderDate backfilling
+python run_pipeline.py --price-mode correct      # Use standard ERP formula
 
 # Validate outputs
 python scripts/tests/smoke_publish.py
 ```
+
+### CLI Flags
+
+| Flag | Options | Default | Description |
+|------|---------|---------|-------------|
+| `--price-mode` | `spec`, `correct` | `spec` | Formula for TotalLineExtendedPrice |
+| `--impute-orderdate` | flag (boolean) | `false` | Backfill incomplete OrderDate values |
+| `--help` | - | - | Show full help message with examples |
+
+**Imputation Impact:**
+
+| Mode | Rows with Lead Time | % of Total | Notes |
+|------|---------------------|------------|-------|
+| **Without** (default) | 121,312 | 99.996% | 5 incomplete dates set to NULL |
+| **With** (`--impute-orderdate`) | 121,317 | 100.00% | **+5 rows (+0.004%)** backfilled |
 
 ---
 
@@ -131,8 +151,8 @@ The specification requests `OrderQty * (UnitPrice - UnitPriceDiscount)`, but thi
 **Deliverables:**
 - Parquet: `out/publish(gold)/analysis_top_color_by_year/`
 - Parquet: `out/publish(gold)/analysis_avg_lead_by_category/`
-- CSV exports: [analysis_top_color_by_year.csv](out/publish(gold)/analysis_top_color_by_year.csv), [analysis_avg_lead_by_category.csv](out/publish(gold)/analysis_avg_lead_by_category.csv)
-- **Sample data:** [sample_publish_orders.csv](out/publish(gold)/sample_publish_orders.csv) (10 rows for quick preview)
+- CSV exports (generated): [analysis_top_color_by_year.csv](out/publish(gold)/analysis_top_color_by_year.csv), [analysis_avg_lead_by_category.csv](out/publish(gold)/analysis_avg_lead_by_category.csv)
+- **Sample data (committed):** [docs/sample_publish_orders.csv](docs/sample_publish_orders.csv) (10 rows, no Spark needed)
 
 ---
 
@@ -315,6 +335,32 @@ When specifications are ambiguous, decisions must be made. This matrix documents
 | store_products | ProductID | - |
 | store_sales_order_header | SalesOrderID | - |
 | store_sales_order_detail | (SalesOrderID, SalesOrderDetailID) | ProductID -> products<br>SalesOrderID -> header |
+
+---
+
+## Tests & Validation
+
+### Business Days Edge Cases
+
+The `smoke_publish.py` test validates business days logic with 3 explicit edge cases:
+
+| Test Case | Input | Expected | Validates |
+|-----------|-------|----------|-----------|
+| **Mon → Wed** | 2021-05-31 → 2021-06-02 | 2 business days | Excludes weekend, excludes ship day |
+| **Fri → Mon** | 2021-06-04 → 2021-06-07 | 1 business day | Skips Saturday & Sunday |
+| **Same day** | OrderDate == ShipDate | 0 business days | Ship day not counted |
+
+**Run tests:**
+```bash
+python scripts/tests/smoke_publish.py       # Validates all outputs + edge cases
+python scripts/tests/test_business_rules.py # Business logic documentation
+```
+
+**Test coverage:**
+- ✅ Business days edge cases (3 assertions)
+- ✅ Data integrity (freight ≥ 0, price/qty sign match, no join data loss)
+- ✅ Schema validation (all required columns present)
+- ✅ Output existence (4 publish tables)
 
 ---
 
