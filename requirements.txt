@@ -4,6 +4,7 @@
 pyspark==3.5.0          # Distributed data processing
 pandas==2.2.0           # Data manipulation (for notebooks)
 numpy>=1.24.0           # Numerical computing
+pyarrow>=14.0.0         # Parquet metadata reading (for summary)
 
 # Visualization
 matplotlib>=3.7.0       # Plotting and charts

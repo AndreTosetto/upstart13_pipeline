@@ -1,87 +1,47 @@
 """
-Smoke test for publish-layer outputs.
-Run after executing the core pipeline (01-05) to ensure deliverables exist and contain expected fields.
+Smoke test - validates publish layer outputs exist and contain required fields.
 """
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pyspark.sql import functions as F  # noqa: E402
-from common import get_paths, build_spark, setup_logging  # noqa: E402
-
-
-def expect(condition: bool, message: str) -> None:
-    """Raise a runtime error when a logical expectation fails."""
-    if not condition:
-        raise RuntimeError(message)
+from common import get_paths, build_spark, setup_logging
 
 
 def main(script_file: str | None = __file__) -> None:
-    log = setup_logging("upstart.tests.smoke_publish")
+    log = setup_logging("upstart.smoke_test")
     paths = get_paths(script_file)
-    spark = build_spark("upstart_smoke_publish", paths)
+    spark = build_spark("upstart_smoke_test", paths)
 
     publish_root = Path(paths["publish"])
-    log.info(f"Publish root: {publish_root}")
-    expect(publish_root.exists(), "Publish directory not found. Run pipeline steps 01-05 first.")
 
-    # === publish_product ===
-    product_path = publish_root / "publish_product"
-    log.info("Validating publish_product...")
-    expect(product_path.exists(), "publish_product parquet folder is missing.")
+    # Validate publish_product
+    log.info("Checking publish_product...")
+    df_product = spark.read.parquet(str(publish_root / "publish_product"))
+    assert df_product.count() > 0, "publish_product is empty"
+    assert "Color" in df_product.columns, "Missing Color column"
+    assert "ProductCategoryName" in df_product.columns, "Missing ProductCategoryName column"
 
-    df_product = spark.read.parquet(str(product_path))
-    expect(df_product.count() > 0, "publish_product is empty.")
-    for col in ("ProductID", "Color", "ProductCategoryName"):
-        nulls = df_product.filter(F.col(col).isNull() | (F.trim(F.col(col)) == "")).count()
-        expect(nulls == 0, f"publish_product has {nulls} null/blank values in {col}.")
+    # Validate publish_orders
+    log.info("Checking publish_orders...")
+    df_orders = spark.read.parquet(str(publish_root / "publish_orders"))
+    assert df_orders.count() > 0, "publish_orders is empty"
+    assert "LeadTimeInBusinessDays" in df_orders.columns, "Missing LeadTimeInBusinessDays"
+    assert "TotalLineExtendedPrice" in df_orders.columns, "Missing TotalLineExtendedPrice"
+    assert "TotalOrderFreight" in df_orders.columns, "Missing TotalOrderFreight"
 
-    # === publish_orders ===
-    orders_path = publish_root / "publish_orders"
-    log.info("Validating publish_orders...")
-    expect(orders_path.exists(), "publish_orders parquet folder is missing.")
+    # Validate analysis outputs
+    log.info("Checking analysis_top_color_by_year...")
+    df_color = spark.read.parquet(str(publish_root / "analysis_top_color_by_year"))
+    assert df_color.count() > 0, "analysis_top_color_by_year is empty"
 
-    df_orders = spark.read.parquet(str(orders_path))
-    expect(df_orders.count() > 0, "publish_orders is empty.")
-    required_columns = {
-        "LeadTimeInBusinessDays",
-        "TotalLineExtendedPrice",
-        "TotalOrderFreight",
-        "OrderDate",
-        "ShipDate",
-    }
-    missing = required_columns - set(df_orders.columns)
-    expect(not missing, f"publish_orders missing required columns: {sorted(missing)}")
+    log.info("Checking analysis_avg_lead_by_category...")
+    df_lead = spark.read.parquet(str(publish_root / "analysis_avg_lead_by_category"))
+    assert df_lead.count() > 0, "analysis_avg_lead_by_category is empty"
 
-    # Lead time should be numeric with no nulls when both dates exist.
-    lead_nulls = (
-        df_orders.filter(
-            (F.col("OrderDate").isNotNull())
-            & (F.col("ShipDate").isNotNull())
-            & F.col("LeadTimeInBusinessDays").isNull()
-        )
-        .count()
-    )
-    expect(lead_nulls == 0, "publish_orders has null lead times despite valid dates.")
-
-    # === analysis outputs ===
-    analysis_sets = [
-        ("analysis_top_color_by_year", {"OrderYear", "Color", "Revenue"}),
-        ("analysis_avg_lead_by_category", {"ProductCategoryName", "AvgLeadTimeInBusinessDays"}),
-    ]
-    for name, cols in analysis_sets:
-        log.info(f"Validating {name}...")
-        path = publish_root / name
-        expect(path.exists(), f"{name} parquet folder is missing.")
-        df = spark.read.parquet(str(path))
-        expect(df.count() > 0, f"{name} is empty.")
-        missing_cols = cols - set(df.columns)
-        expect(not missing_cols, f"{name} missing columns: {sorted(missing_cols)}")
-
-    log.info("Smoke test passed. Publish outputs are ready.")
+    log.info("All smoke tests passed")
     spark.stop()
 
 

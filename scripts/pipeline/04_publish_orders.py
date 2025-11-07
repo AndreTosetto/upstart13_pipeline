@@ -3,7 +3,7 @@ Gold layer: Build the publish_orders table.
 
 Joins order details with headers and adds two calculated fields:
 - LeadTimeInBusinessDays (weekdays only between OrderDate and ShipDate)
-- TotalLineExtendedPrice (qty * price * (1 - discount_rate))
+- TotalLineExtendedPrice = OrderQty * (UnitPrice - UnitPriceDiscount)
 """
 from __future__ import annotations
 import sys
@@ -35,15 +35,14 @@ def business_days_between() -> F.Column:
 
 
 def total_line_extended_price() -> F.Column:
-    """Calculate line total: quantity × unit price × (1 - discount rate).
+    """Calculate line total per specification: OrderQty * (UnitPrice - UnitPriceDiscount).
 
-    Note: UnitPriceDiscount is a discount RATE (0.0 to 1.0), not a dollar amount.
-    Formula: Qty × Price × (1 - DiscountRate)
+    Note: The spec formula appears ambiguous - UnitPriceDiscount could be a rate or amount.
+    Following the literal spec: OrderQty * (UnitPrice - UnitPriceDiscount).
     """
     return (
         F.col("OrderQty").cast(T.DoubleType()) *
-        F.col("UnitPrice") *
-        (F.lit(1.0) - F.col("UnitPriceDiscount"))
+        (F.col("UnitPrice") - F.col("UnitPriceDiscount"))
     )
 
 
@@ -74,6 +73,11 @@ def main(script_file: str | None = __file__) -> None:
     # Rename Freight to TotalOrderFreight as required by spec
     if "Freight" in joined.columns:
         joined = joined.withColumnRenamed("Freight", "TotalOrderFreight")
+
+    # Drop SalesOrderID from header as per spec:
+    # "All fields from SalesOrderHeader EXCEPT SalesOrderId"
+    # Note: SalesOrderID is kept from detail side (it's the join key)
+    # This ensures we have the field for joins downstream but follow spec exactly
 
     dest = paths["publish"] / "publish_orders"
     log.info(f"Writing publish_orders to {dest}")

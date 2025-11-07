@@ -8,6 +8,13 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+# For publish summary - use parquet metadata instead of Spark
+try:
+    import pyarrow.parquet as pq
+    PARQUET_AVAILABLE = True
+except ImportError:
+    PARQUET_AVAILABLE = False
+
 # Pipeline scripts in execution order
 PIPELINE_SCRIPTS = [
     "scripts/pipeline/01_load_raw.py",
@@ -16,6 +23,44 @@ PIPELINE_SCRIPTS = [
     "scripts/pipeline/04_publish_orders.py",
     "scripts/pipeline/05_analysis_questions.py",
 ]
+
+def print_publish_summary(project_root: Path):
+    """Print summary of publish layer outputs using parquet metadata."""
+    if not PARQUET_AVAILABLE:
+        print("\nNote: Install pyarrow to see publish summary")
+        return
+
+    print("\n" + "="*70)
+    print("PUBLISH LAYER SUMMARY")
+    print("="*70)
+
+    try:
+        publish_root = project_root / "out" / "publish(gold)"
+
+        # Publish tables - read row counts from parquet metadata
+        print("\nPublish Tables:")
+        for table in ["publish_product", "publish_orders"]:
+            path = publish_root / table
+            if path.exists():
+                # Read metadata without loading data
+                parquet_files = list(path.glob("*.parquet"))
+                if parquet_files:
+                    total_rows = sum(pq.read_metadata(str(f)).num_rows for f in parquet_files)
+                    print(f"  {table:<20} {total_rows:>8,} rows")
+
+        # Note about analysis outputs
+        print("\nAnalysis Outputs:")
+        print("  analysis_top_color_by_year      - Top revenue color per year")
+        print("  analysis_avg_lead_by_category   - Average lead time by category")
+        print("\nRun smoke test for detailed validation:")
+        print("  python scripts/tests/smoke_publish.py")
+
+        print("="*70)
+
+    except Exception as e:
+        print(f"Could not generate summary: {e}")
+        print("="*70)
+
 
 def run_script(script_path: Path, project_root: Path) -> tuple[bool, float]:
     """
@@ -117,6 +162,10 @@ def main():
         print(f"{script_name:<35} {status:<15} {duration:>8.1f}s")
 
     print(f"\n{'='*70}")
+
+    # Print publish summary if pipeline succeeded
+    if failed == 0:
+        print_publish_summary(project_root)
 
     # Exit with appropriate code
     if failed > 0:
