@@ -4,6 +4,19 @@ PySpark pipeline implementing product master and sales order transformations wit
 
 ---
 
+## ⚠️ Assumptions & Deviations (Scan in 10s)
+
+| Decision | Implementation | Rationale | How to Change |
+|----------|----------------|-----------|---------------|
+| **Price Formula** | Uses spec literal: `OrderQty * (UnitPrice - UnitPriceDiscount)` | Follows requirement word-for-word; both formulas preserved for comparison (diff: -0.48%) | Switch to `TotalLineExtendedPrice_Correct` column in [04_publish_orders.py:87](scripts/pipeline/04_publish_orders.py#L87) |
+| **OrderDate Imputation** | Backfills 5 incomplete dates as `ShipDate - 7 days` | Enables lead time calculation (+0.004% rows); preserves ~5 business day pattern | Set to NULL to exclude from calculation in [02_store_cast_and_keys.py:57](scripts/pipeline/02_store_cast_and_keys.py#L57) |
+| **Business Days Logic** | Counts weekdays from OrderDate up to (not including) ShipDate | Standard definition: excludes weekends, excludes ship day itself | Modify `business_days_between()` in [04_publish_orders.py:18](scripts/pipeline/04_publish_orders.py#L18) |
+| **Freight Rename** | `Freight` → `TotalOrderFreight` | Per spec requirement: "rename to TotalOrderFreight" | Column rename in [04_publish_orders.py:90](scripts/pipeline/04_publish_orders.py#L90) |
+
+**Key Metrics:** 295 products (deduplicated from 303) • 121,317 order lines • 31,465 headers • Pipeline: ~78s
+
+---
+
 ## Quick Start
 
 **Requirements:** Python 3.10+, Java 11+
@@ -71,29 +84,55 @@ out/publish(gold)/
 
 **Calculated fields:**
 - `LeadTimeInBusinessDays`: Weekdays between OrderDate and ShipDate (excludes Sat/Sun)
-- `TotalLineExtendedPrice`: `OrderQty * (UnitPrice - UnitPriceDiscount)`
+- `TotalLineExtendedPrice`: `OrderQty * (UnitPrice - UnitPriceDiscount)` **(spec literal - official deliverable)**
+- `TotalLineExtendedPrice_Spec`: Spec literal formula (same as above)
+- `TotalLineExtendedPrice_Correct`: Standard business logic `OrderQty * UnitPrice * (1 - UnitPriceDiscount)`
+- `PriceDiff_Pct`: Percentage difference between formulas
 - `TotalOrderFreight`: Renamed from `Freight`
+
+**Formula Ambiguity Analysis:**
+
+The specification requests `OrderQty * (UnitPrice - UnitPriceDiscount)`, but this is ambiguous:
+- If `UnitPriceDiscount` is a **dollar amount**: Formula A is correct
+- If `UnitPriceDiscount` is a **rate (0.0-1.0)**: Formula B is correct (standard ERP logic)
+
+| Metric | Formula A (Spec Literal) | Formula B (Standard Logic) | Difference |
+|--------|--------------------------|----------------------------|------------|
+| **Formula** | `OrderQty * (UnitPrice - UnitPriceDiscount)` | `OrderQty * UnitPrice * (1 - UnitPriceDiscount)` | - |
+| **Total Revenue** | $110,230,153.63 | $109,704,688.83 | -$525,464.80 (-0.48%) |
+| **Avg Diff per Line** | - | - | -0.28% |
+| **Range** | - | - | -39.79% to 0.00% |
+
+**Decision:** Official deliverable (`TotalLineExtendedPrice`) uses **Formula A** to match specification literally. Both formulas are preserved in publish_orders for client clarification. See [formula_comparison_sample.csv](out/publish(gold)/formula_comparison_sample.csv) for line-by-line comparison.
 
 **Implementation note:** Business days calculated using Spark SQL `sequence()` + `filter()` for scalability.
 
 ### 3. Analysis Questions
 
 **Q1: Which color generated the highest revenue each year?**
-- **2021:** Red ($6.02M)
-- **2022:** Black ($13.92M)
-- **2023:** Black ($15.03M)
-- **2024:** Yellow ($6.36M)
+
+| Year | Top Color | Revenue |
+|------|-----------|---------|
+| 2021 | Red | $6,019,614.02 |
+| 2022 | Black | $14,005,243.00 |
+| 2023 | Black | $15,047,694.37 |
+| 2024 | Yellow | $6,368,158.48 |
 
 **Q2: Average lead time by product category?**
-- Accessories: 5.01 days
-- Bikes: 5.00 days
-- Clothing: 5.01 days
-- Components: 5.01 days
+
+| Product Category | Avg Lead Time (Business Days) |
+|------------------|-------------------------------|
+| Accessories | 5.01 |
+| Bikes | 5.00 |
+| Clothing | 5.01 |
+| Components | 5.00 |
+| (NULL category) | 5.01 |
 
 **Deliverables:**
 - Parquet: `out/publish(gold)/analysis_top_color_by_year/`
 - Parquet: `out/publish(gold)/analysis_avg_lead_by_category/`
 - CSV exports: [analysis_top_color_by_year.csv](out/publish(gold)/analysis_top_color_by_year.csv), [analysis_avg_lead_by_category.csv](out/publish(gold)/analysis_avg_lead_by_category.csv)
+- **Sample data:** [sample_publish_orders.csv](out/publish(gold)/sample_publish_orders.csv) (10 rows for quick preview)
 
 ---
 
@@ -102,9 +141,19 @@ out/publish(gold)/
 ### Data Quality Fixes (Silver Layer)
 
 **1. Incomplete OrderDate handling**
-- Raw CSV contains dates in `YYYY-MM` format (e.g., "2021-06")
-- **Solution:** Backfill as `ShipDate - 7 days` (preserves ~5 business day lead time)
-- **Impact:** Enables accurate LeadTimeInBusinessDays calculation
+
+**Issue:** Raw CSV contains 5 rows with dates in `YYYY-MM` format (e.g., "2021-06")
+
+**Solution:** Backfill as `ShipDate - 7 days` (preserves ~5 business day lead time)
+
+**Impact Table:**
+
+| Scenario | Rows with Lead Time | % of Total | Notes |
+|----------|---------------------|------------|-------|
+| Without imputation | 121,312 | 99.996% | Excludes 5 incomplete dates |
+| With imputation | 121,317 | 100.00% | **+5 rows (+0.004%)** - current implementation |
+
+**Alternative:** Set imputation to `NULL` to exclude these 5 rows from lead time calculation (see [02_store_cast_and_keys.py:57](scripts/pipeline/02_store_cast_and_keys.py#L57))
 
 **2. Duplicate ProductIDs**
 - Raw data has 303 rows, but only 295 unique ProductIDs
@@ -161,6 +210,101 @@ When specifications are ambiguous, decisions must be made. This matrix documents
 | **Category enhancement** | Spec provides subcategory mapping but doesn't say whether to check case-sensitivity for "Frames" | Used case-insensitive match: `lower(subcategory).contains("frames")` | Could use exact case: `subcategory.contains("Frames")` | [03_publish_product.py:40](scripts/pipeline/03_publish_product.py#L40) |
 
 **Why this matters:** Proactive communication of assumptions demonstrates engineering maturity. When ambiguity exists, document the decision and provide clear guidance for modification.
+
+---
+
+## Schema Proof
+
+### Silver Layer Schemas
+
+<details>
+<summary><b>store_products</b> (295 rows)</summary>
+
+| Column | Type |
+|--------|------|
+| ProductID | IntegerType |
+| ProductDesc | StringType |
+| ProductNumber | StringType |
+| MakeFlag | BooleanType |
+| Color | StringType |
+| SafetyStockLevel | IntegerType |
+| ReorderPoint | IntegerType |
+| StandardCost | DoubleType |
+| ListPrice | DoubleType |
+| Size | StringType |
+| SizeUnitMeasureCode | StringType |
+| Weight | DoubleType |
+| WeightUnitMeasureCode | StringType |
+| ProductCategoryName | StringType |
+| ProductSubCategoryName | StringType |
+
+</details>
+
+<details>
+<summary><b>store_sales_order_header</b> (31,465 rows)</summary>
+
+| Column | Type |
+|--------|------|
+| SalesOrderID | IntegerType |
+| OrderDate | TimestampType |
+| ShipDate | TimestampType |
+| OnlineOrderFlag | BooleanType |
+| AccountNumber | StringType |
+| CustomerID | IntegerType |
+| SalesPersonID | IntegerType |
+| Freight | DoubleType |
+
+</details>
+
+<details>
+<summary><b>store_sales_order_detail</b> (121,317 rows)</summary>
+
+| Column | Type |
+|--------|------|
+| SalesOrderID | IntegerType |
+| SalesOrderDetailID | IntegerType |
+| OrderQty | IntegerType |
+| ProductID | IntegerType |
+| UnitPrice | DoubleType |
+| UnitPriceDiscount | DoubleType |
+
+</details>
+
+### Gold Layer Schema
+
+**publish_orders (121,317 rows)**
+
+**Columns from SalesOrderDetail:**
+- SalesOrderID (IntegerType)
+- SalesOrderDetailID (IntegerType)
+- OrderQty (IntegerType)
+- ProductID (IntegerType)
+- UnitPrice (DoubleType)
+- UnitPriceDiscount (DoubleType)
+
+**Columns from SalesOrderHeader (except SalesOrderId per spec):**
+- OrderDate (TimestampType)
+- ShipDate (TimestampType)
+- OnlineOrderFlag (BooleanType)
+- AccountNumber (StringType)
+- CustomerID (IntegerType)
+- SalesPersonID (IntegerType)
+- TotalOrderFreight (DoubleType) - renamed from Freight
+
+**Calculated Columns:**
+- LeadTimeInBusinessDays (IntegerType) - business days between OrderDate and ShipDate
+- TotalLineExtendedPrice (DoubleType) - official deliverable using spec literal formula
+- TotalLineExtendedPrice_Spec (DoubleType) - spec literal formula
+- TotalLineExtendedPrice_Correct (DoubleType) - standard business logic formula
+- PriceDiff_Pct (DoubleType) - percentage difference between formulas
+
+**Sample Data (first 3 rows):**
+
+| SalesOrderID | DetailID | OrderDate | ShipDate | ProductID | Qty | UnitPrice | Discount | LeadTime | TotalPrice | Freight |
+|--------------|----------|-----------|----------|-----------|-----|-----------|----------|----------|------------|---------|
+| 43659 | 1 | 2021-05-31 | 2021-06-07 | 776 | 1 | 2024.99 | 0.0 | 5 | 2024.99 | 616.10 |
+| 43659 | 2 | 2021-05-31 | 2021-06-07 | 777 | 3 | 2024.99 | 0.0 | 5 | 6074.98 | 616.10 |
+| 43659 | 3 | 2021-05-31 | 2021-06-07 | 778 | 1 | 2024.99 | 0.0 | 5 | 2024.99 | 616.10 |
 
 ---
 

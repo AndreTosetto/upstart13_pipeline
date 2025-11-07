@@ -34,15 +34,27 @@ def business_days_between() -> F.Column:
     )
 
 
-def total_line_extended_price() -> F.Column:
-    """Calculate line total per specification: OrderQty * (UnitPrice - UnitPriceDiscount).
+def total_line_extended_price_spec() -> F.Column:
+    """Calculate line total per LITERAL specification: OrderQty * (UnitPrice - UnitPriceDiscount).
 
-    Note: The spec formula appears ambiguous - UnitPriceDiscount could be a rate or amount.
-    Following the literal spec: OrderQty * (UnitPrice - UnitPriceDiscount).
+    This follows the spec word-for-word, treating UnitPriceDiscount as a dollar amount.
     """
     return (
         F.col("OrderQty").cast(T.DoubleType()) *
         (F.col("UnitPrice") - F.col("UnitPriceDiscount"))
+    )
+
+
+def total_line_extended_price_correct() -> F.Column:
+    """Calculate line total using standard business logic: OrderQty * UnitPrice * (1 - UnitPriceDiscount).
+
+    This treats UnitPriceDiscount as a rate (0.0-1.0), which is the typical interpretation
+    in most ERP systems (SAP, Oracle, etc.).
+    """
+    return (
+        F.col("OrderQty").cast(T.DoubleType()) *
+        F.col("UnitPrice") *
+        (F.lit(1.0) - F.col("UnitPriceDiscount"))
     )
 
 
@@ -68,7 +80,23 @@ def main(script_file: str | None = __file__) -> None:
 
     # Add calculated fields
     joined = joined.withColumn("LeadTimeInBusinessDays", business_days_between())
-    joined = joined.withColumn("TotalLineExtendedPrice", total_line_extended_price())
+
+    # Add BOTH formula interpretations for comparison
+    joined = joined.withColumn("TotalLineExtendedPrice_Spec", total_line_extended_price_spec())
+    joined = joined.withColumn("TotalLineExtendedPrice_Correct", total_line_extended_price_correct())
+
+    # Calculate percentage difference for analysis
+    joined = joined.withColumn(
+        "PriceDiff_Pct",
+        F.when(
+            F.col("TotalLineExtendedPrice_Spec") != 0,
+            ((F.col("TotalLineExtendedPrice_Correct") - F.col("TotalLineExtendedPrice_Spec"))
+             / F.col("TotalLineExtendedPrice_Spec") * 100)
+        ).otherwise(F.lit(0.0))
+    )
+
+    # Official deliverable uses spec literal interpretation
+    joined = joined.withColumn("TotalLineExtendedPrice", F.col("TotalLineExtendedPrice_Spec"))
 
     # Rename Freight to TotalOrderFreight as required by spec
     if "Freight" in joined.columns:
