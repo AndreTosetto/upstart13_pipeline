@@ -123,7 +123,7 @@ The specification requests `OrderQty * (UnitPrice - UnitPriceDiscount)`, but thi
 | **Avg Diff per Line** | - | - | -0.28% |
 | **Range** | - | - | -39.79% to 0.00% |
 
-**Decision:** Official deliverable (`TotalLineExtendedPrice`) uses **Formula A** to match specification literally. Both formulas are preserved in publish_orders for client clarification. See [formula_comparison_sample.csv](out/publish(gold)/formula_comparison_sample.csv) for line-by-line comparison.
+**Decision:** Official deliverable (`TotalLineExtendedPrice`) uses **Formula A** to match specification literally. Both formulas are preserved in publish_orders for client clarification. See [formula_comparison_sample.csv](docs/formula_comparison_sample.csv) for line-by-line comparison.
 
 **Implementation note:** Business days calculated using Spark SQL `sequence()` + `filter()` for scalability.
 
@@ -149,10 +149,13 @@ The specification requests `OrderQty * (UnitPrice - UnitPriceDiscount)`, but thi
 | (NULL category) | 5.01 |
 
 **Deliverables:**
-- Parquet: `out/publish(gold)/analysis_top_color_by_year/`
-- Parquet: `out/publish(gold)/analysis_avg_lead_by_category/`
-- CSV exports (generated): [analysis_top_color_by_year.csv](out/publish(gold)/analysis_top_color_by_year.csv), [analysis_avg_lead_by_category.csv](out/publish(gold)/analysis_avg_lead_by_category.csv)
-- **Sample data (committed):** [docs/sample_publish_orders.csv](docs/sample_publish_orders.csv) (10 rows, no Spark needed)
+- Parquet: `out/publish(gold)/analysis_top_color_by_year/` (generated)
+- Parquet: `out/publish(gold)/analysis_avg_lead_by_category/` (generated)
+- **CSV exports (committed in docs/):**
+  - [analysis_top_color_by_year.csv](docs/analysis_top_color_by_year.csv)
+  - [analysis_avg_lead_by_category.csv](docs/analysis_avg_lead_by_category.csv)
+  - [sample_publish_orders.csv](docs/sample_publish_orders.csv) (10 rows preview)
+  - [formula_comparison_sample.csv](docs/formula_comparison_sample.csv) (100 rows A/B comparison)
 
 ---
 
